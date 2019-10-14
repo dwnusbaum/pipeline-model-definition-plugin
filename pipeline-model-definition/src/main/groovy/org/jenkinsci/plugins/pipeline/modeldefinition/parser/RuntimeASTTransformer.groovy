@@ -62,13 +62,10 @@ import static org.objectweb.asm.Opcodes.ACC_STATIC
  */
 @SuppressFBWarnings(value="SE_NO_SERIALVERSIONID")
 class RuntimeASTTransformer {
-    ClassNode rootClassNode
-    ModuleNode moduleNode
-    def methodClassNode = [:]
-    static def groupSize = 50
+    ClassNode scriptClassNode
 
     RuntimeASTTransformer(ModuleNode moduleNode) {
-        this.moduleNode = moduleNode
+        this.scriptClassNode = moduleNode.classes.find { cn -> cn.getName().equals("WorkflowScript") };
     }
 
     Expression ctorXFunction(ClassNode type, Expression args) {
@@ -76,20 +73,8 @@ class RuntimeASTTransformer {
     }
 
     Expression mappedMethod(String groupName, ClassNode returnType, Expression returnXBody) {
-
-        // We break the the ast graph into classes with static mathods to work around JVM class and method size limitations
-        // However, class loading isn't free, so we also don't want a single method per class
-        ClassNode classNode = methodClassNode[groupName]
-
-        // If we don't have a classNode for this group name or if this class has reached groupSize, start a new class
-        if (classNode == null || classNode.methods.size() >= groupSize) {
-            classNode = new ClassNode("__DeclarativePipelineRuntime_${groupName}_${this.moduleNode.classes.size()}", ACC_PUBLIC, ClassHelper.make(Object))
-            this.moduleNode.addClass(classNode)
-            methodClassNode[groupName] = classNode
-        }
-
         // Uncreative method naming is fine
-        def methodCount = classNode.methods.size()
+        def methodCount = scriptClassNode.methods.size()
         String name = "get${groupName}_${methodCount}"
 
         // The only thing these methods need to do is contain something to return
@@ -98,11 +83,11 @@ class RuntimeASTTransformer {
                         returnS(returnXBody)
                 )
 
-        MethodNode method = new MethodNode(name, ACC_PUBLIC | ACC_STATIC, ClassHelper.make(returnType.class), [] as Parameter[], [] as ClassNode[], methodBody)
-        classNode.addMethod(method)
+        MethodNode method = new MethodNode(name, ACC_PUBLIC, ClassHelper.make(returnType.class), [] as Parameter[], [] as ClassNode[], methodBody)
+        scriptClassNode.addMethod(method)
 
         // Instead the passed in expression, we return a function call that returns the passed in expression
-        return callX(classNode, name)
+        return callThisX(name)
     }
 
     /**
